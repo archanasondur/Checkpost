@@ -26,6 +26,9 @@ public class ActionRequestService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private EventPublisherService eventPublisherService;
+
     public ActionRequest submit(ActionRequestDto dto) {
         if (dto.getIdempotencyKey() != null) {
             Optional<ActionRequest> existing = repository.findByIdempotencyKey(dto.getIdempotencyKey());
@@ -83,6 +86,7 @@ public class ActionRequestService {
 
         ActionRequest saved = repository.save(request);
         auditLogService.write(saved.getId(), "SUBMITTED", "state=" + saved.getState() + ", tool=" + saved.getToolName());
+        eventPublisherService.publish(saved.getId(), "SUBMITTED", "state=" + saved.getState());
         return saved;
     }
 
@@ -101,6 +105,7 @@ public class ActionRequestService {
             request.setState(ActionState.KILLED);
             repository.save(request);
             auditLogService.write(request.getId(), "KILLED", "previous state=" + state);
+            eventPublisherService.publish(request.getId(), "KILLED", "previous state=" + state);
         }
         return Optional.of(request);
     }
@@ -122,6 +127,7 @@ public class ActionRequestService {
         request.setDecidedAt(java.time.Instant.now());
         ActionRequest saved = repository.save(request);
         auditLogService.write(saved.getId(), "APPROVED", "decidedBy=" + decidedBy);
+        eventPublisherService.publish(saved.getId(), "APPROVED", "decidedBy=" + decidedBy);
         return Optional.of(saved);
     }
 
@@ -139,6 +145,7 @@ public class ActionRequestService {
         request.setDecisionReason(reason);
         ActionRequest saved = repository.save(request);
         auditLogService.write(saved.getId(), "DENIED", "decidedBy=" + decidedBy + ", reason=" + reason);
+        eventPublisherService.publish(saved.getId(), "DENIED", "decidedBy=" + decidedBy + ", reason=" + reason);
         return Optional.of(saved);
     }
 }
