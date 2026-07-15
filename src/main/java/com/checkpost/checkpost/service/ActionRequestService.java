@@ -14,8 +14,16 @@ public class ActionRequestService {
     @Autowired
     private ActionRequestRepository repository;
 
+    @Autowired
+    private PolicyEngineService policyEngineService;
+
+    @Autowired
+    private RateLimiterService rateLimiterService;
+
+    @Autowired
+    private SpendLedgerService spendLedgerService;
+
     public ActionRequest submit(ActionRequestDto dto) {
-        // Idempotency check: same key, same request, return the original
         if (dto.getIdempotencyKey() != null) {
             Optional<ActionRequest> existing = repository.findByIdempotencyKey(dto.getIdempotencyKey());
             if (existing.isPresent()) {
@@ -30,13 +38,37 @@ public class ActionRequestService {
         request.setIdempotencyKey(dto.getIdempotencyKey());
         request.setState(ActionState.POLICY_EVALUATING);
 
-        // Hardcoded rule for Part 2. Real policy engine arrives in Part 4.
-        String tool = dto.getToolName() == null ? "" : dto.getToolName().toUpperCase();
-        if (tool.contains("DELETE")) {
-            request.setRiskTier("HIGH");
+        com.checkpost.checkpost.dto.PolicyDecision decision =
+            policyEngineService.evaluate(dto.getAgentId(), dto.getToolName(), dto.getEstimatedCost());
+        request.setRiskTier(decision.getRiskTier());
+
+        if ("DENY".equalsIgnoreCase(decision.getAction())) {
+            request.setState(ActionState.DENIED);
+            request.setDecisionReason(decision.getReason());
+            return repository.save(request);
+        }
+
+        com.checkpost.checkpost.model.Policy matched = decision.getMatchedPolicy();
+
+        if (matched != null && rateLimiterService.exceedsLimit(dto.getAgentId(), matched.getMaxCallsPerMinute())) {
+            request.setState(ActionState.DENIED);
+            request.setDecisionReason("Rate limit exceeded (" + matched.getMaxCallsPerMinute() + "/min)");
+            return repository.save(request);
+        }
+
+        if (matched != null && spendLedgerService.wouldExceed(dto.getAgentId(), dto.getEstimatedCost(), matched.getMaxSpendPerDay())) {
+            request.setState(ActionState.DENIED);
+            request.setDecisionReason("Daily spend cap exceeded ($" + matched.getMaxSpendPerDay() + ")");
+            return repository.save(request);
+        }
+
+        if (dto.getEstimatedCost() != null) {
+            spendLedgerService.record(dto.getAgentId(), dto.getEstimatedCost());
+        }
+
+        if ("REQUIRE_APPROVAL".equalsIgnoreCase(decision.getAction())) {
             request.setState(ActionState.PENDING_APPROVAL);
         } else {
-            request.setRiskTier("LOW");
             request.setState(ActionState.APPROVED);
         }
 
