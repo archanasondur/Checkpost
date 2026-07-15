@@ -1,0 +1,36 @@
+package com.checkpost.checkpost.controller;
+
+import com.checkpost.checkpost.dto.ActionRequestDto;
+import com.checkpost.checkpost.model.ActionRequest;
+import com.checkpost.checkpost.service.ActionRequestService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/v1/actions")
+public class ActionRequestController {
+
+    @Autowired
+    private ActionRequestService service;
+
+    @PostMapping
+    public ResponseEntity<ActionRequest> submit(@RequestBody ActionRequestDto dto) {
+        ActionRequest result = service.submit(dto);
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ActionRequest> get(@PathVariable Long id) {
+        return service.findById(id)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/kill")
+    public ResponseEntity<ActionRequest> kill(@PathVariable Long id) {
+        return service.kill(id)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+    }
+}
