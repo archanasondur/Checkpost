@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Checkpost — Approval Queue</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #111; color: #eee; }
+  h1 { font-size: 20px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; font-size: 14px; }
+  button { padding: 6px 12px; margin-right: 6px; cursor: pointer; border: none; border-radius: 4px; }
+  .approve { background: #2ecc71; color: #000; }
+  .deny { background: #e74c3c; color: #000; }
+  .empty { color: #888; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>Checkpost — Pending Approval Queue</h1>
+<div id="queue"></div>
+
+<script>
+async function loadQueue() {
+  const res = await fetch('/v1/actions/pending');
+  const items = await res.json();
+  const el = document.getElementById('queue');
+
+  if (items.length === 0) {
+    el.innerHTML = '<p class="empty">No actions pending approval.</p>';
+    return;
+  }
+
+  let rows = items.map(item => `
+    <tr>
+      <td>${item.id}</td>
+      <td>${item.agentId}</td>
+      <td>${item.toolName}</td>
+      <td>${item.riskTier}</td>
+      <td>
+        <button class="approve" onclick="decide(${item.id}, 'approve')">Approve</button>
+        <button class="deny" onclick="decide(${item.id}, 'deny')">Deny</button>
+      </td>
+    </tr>
+  `).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>ID</th><th>Agent</th><th>Tool</th><th>Risk</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function decide(id, action) {
+  let reason = null;
+  if (action === 'deny') {
+    reason = prompt('Reason for denial (optional):') || '';
+  }
+  await fetch(`/v1/actions/${id}/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decidedBy: 'dashboard-user', reason })
+  });
+  loadQueue();
+}
+
+loadQueue();
+setInterval(loadQueue, 5000);
+</script>
+</body>
+</html>

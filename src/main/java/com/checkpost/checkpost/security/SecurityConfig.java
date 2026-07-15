@@ -13,7 +13,7 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**", "/v1/**").permitAll()
+                .requestMatchers("/actuator/**", "/v1/**", "/", "/index.html", "/*.js", "/*.css").permitAll()
                 .anyRequest().authenticated()
             );
         return http.build();

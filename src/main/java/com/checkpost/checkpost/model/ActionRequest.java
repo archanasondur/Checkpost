@@ -39,6 +39,9 @@ public class ActionRequest {
     @Column(name = "decided_by")
     private String decidedBy;
 
+    @Column(name = "decision_reason")
+    private String decisionReason;
+
     public ActionRequest() {}
 
     public Long getId() { return id; }
@@ -70,4 +73,7 @@ public class ActionRequest {
 
     public String getDecidedBy() { return decidedBy; }
     public void setDecidedBy(String decidedBy) { this.decidedBy = decidedBy; }
+
+    public String getDecisionReason() { return decisionReason; }
+    public void setDecisionReason(String decisionReason) { this.decisionReason = decisionReason; }
 }

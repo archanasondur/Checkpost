@@ -60,4 +60,37 @@ public class ActionRequestService {
         }
         return Optional.of(request);
     }
+
+    public java.util.List<ActionRequest> findPending() {
+        return repository.findByState(ActionState.PENDING_APPROVAL);
+    }
+
+    public Optional<ActionRequest> approve(Long id, String decidedBy) {
+        Optional<ActionRequest> found = repository.findById(id);
+        if (found.isEmpty()) return Optional.empty();
+
+        ActionRequest request = found.get();
+        if (request.getState() != ActionState.PENDING_APPROVAL) {
+            return Optional.of(request); // no-op if not awaiting approval
+        }
+        request.setState(ActionState.APPROVED);
+        request.setDecidedBy(decidedBy);
+        request.setDecidedAt(java.time.Instant.now());
+        return Optional.of(repository.save(request));
+    }
+
+    public Optional<ActionRequest> deny(Long id, String decidedBy, String reason) {
+        Optional<ActionRequest> found = repository.findById(id);
+        if (found.isEmpty()) return Optional.empty();
+
+        ActionRequest request = found.get();
+        if (request.getState() != ActionState.PENDING_APPROVAL) {
+            return Optional.of(request);
+        }
+        request.setState(ActionState.DENIED);
+        request.setDecidedBy(decidedBy);
+        request.setDecidedAt(java.time.Instant.now());
+        request.setDecisionReason(reason);
+        return Optional.of(repository.save(request));
+    }
 }
