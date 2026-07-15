@@ -23,6 +23,9 @@ public class ActionRequestService {
     @Autowired
     private SpendLedgerService spendLedgerService;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     public ActionRequest submit(ActionRequestDto dto) {
         if (dto.getIdempotencyKey() != null) {
             Optional<ActionRequest> existing = repository.findByIdempotencyKey(dto.getIdempotencyKey());
@@ -45,7 +48,9 @@ public class ActionRequestService {
         if ("DENY".equalsIgnoreCase(decision.getAction())) {
             request.setState(ActionState.DENIED);
             request.setDecisionReason(decision.getReason());
-            return repository.save(request);
+            ActionRequest saved = repository.save(request);
+            auditLogService.write(saved.getId(), "POLICY_DENIED", decision.getReason());
+            return saved;
         }
 
         com.checkpost.checkpost.model.Policy matched = decision.getMatchedPolicy();
@@ -53,13 +58,17 @@ public class ActionRequestService {
         if (matched != null && rateLimiterService.exceedsLimit(dto.getAgentId(), matched.getMaxCallsPerMinute())) {
             request.setState(ActionState.DENIED);
             request.setDecisionReason("Rate limit exceeded (" + matched.getMaxCallsPerMinute() + "/min)");
-            return repository.save(request);
+            ActionRequest saved = repository.save(request);
+            auditLogService.write(saved.getId(), "RATE_LIMIT_DENIED", request.getDecisionReason());
+            return saved;
         }
 
         if (matched != null && spendLedgerService.wouldExceed(dto.getAgentId(), dto.getEstimatedCost(), matched.getMaxSpendPerDay())) {
             request.setState(ActionState.DENIED);
             request.setDecisionReason("Daily spend cap exceeded ($" + matched.getMaxSpendPerDay() + ")");
-            return repository.save(request);
+            ActionRequest saved = repository.save(request);
+            auditLogService.write(saved.getId(), "SPEND_CAP_DENIED", request.getDecisionReason());
+            return saved;
         }
 
         if (dto.getEstimatedCost() != null) {
@@ -72,7 +81,9 @@ public class ActionRequestService {
             request.setState(ActionState.APPROVED);
         }
 
-        return repository.save(request);
+        ActionRequest saved = repository.save(request);
+        auditLogService.write(saved.getId(), "SUBMITTED", "state=" + saved.getState() + ", tool=" + saved.getToolName());
+        return saved;
     }
 
     public Optional<ActionRequest> findById(Long id) {
@@ -89,6 +100,7 @@ public class ActionRequestService {
         if (state == ActionState.EXECUTING || state == ActionState.APPROVED || state == ActionState.PENDING_APPROVAL) {
             request.setState(ActionState.KILLED);
             repository.save(request);
+            auditLogService.write(request.getId(), "KILLED", "previous state=" + state);
         }
         return Optional.of(request);
     }
@@ -108,7 +120,9 @@ public class ActionRequestService {
         request.setState(ActionState.APPROVED);
         request.setDecidedBy(decidedBy);
         request.setDecidedAt(java.time.Instant.now());
-        return Optional.of(repository.save(request));
+        ActionRequest saved = repository.save(request);
+        auditLogService.write(saved.getId(), "APPROVED", "decidedBy=" + decidedBy);
+        return Optional.of(saved);
     }
 
     public Optional<ActionRequest> deny(Long id, String decidedBy, String reason) {
@@ -123,6 +137,8 @@ public class ActionRequestService {
         request.setDecidedBy(decidedBy);
         request.setDecidedAt(java.time.Instant.now());
         request.setDecisionReason(reason);
-        return Optional.of(repository.save(request));
+        ActionRequest saved = repository.save(request);
+        auditLogService.write(saved.getId(), "DENIED", "decidedBy=" + decidedBy + ", reason=" + reason);
+        return Optional.of(saved);
     }
 }

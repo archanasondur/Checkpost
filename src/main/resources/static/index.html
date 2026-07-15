@@ -66,5 +66,54 @@ async function decide(id, action) {
 loadQueue();
 setInterval(loadQueue, 5000);
 </script>
+
+<h1 style="margin-top: 50px;">Checkpost — Audit Log</h1>
+<div id="audit"></div>
+
+<script>
+async function loadAudit() {
+  const res = await fetch('/v1/audit');
+  const items = await res.json();
+  const el = document.getElementById('audit');
+
+  if (items.length === 0) {
+    el.innerHTML = '<p class="empty">No audit entries yet.</p>';
+    return;
+  }
+
+  let rows = items.map(item => `
+    <tr>
+      <td>${item.id}</td>
+      <td>${item.actionRequestId}</td>
+      <td>${item.eventType}</td>
+      <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.detail || ''}</td>
+      <td style="font-family: monospace; font-size: 11px;">${item.entryHash.substring(0, 10)}...</td>
+      <td>${new Date(item.timestamp).toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Log ID</th><th>Action ID</th><th>Event</th><th>Detail</th><th>Hash</th><th>Time</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="margin-top: 10px;"><button onclick="verifyChain()">Verify Chain Integrity</button> <span id="verifyResult"></span></p>
+  `;
+}
+
+async function verifyChain() {
+  const res = await fetch('/v1/audit/verify');
+  const result = await res.json();
+  const el = document.getElementById('verifyResult');
+  if (result.valid) {
+    el.innerHTML = `<span style="color:#2ecc71;">✓ ${result.message}</span>`;
+  } else {
+    el.innerHTML = `<span style="color:#e74c3c;">✗ ${result.message} (row ${result.brokenAtId})</span>`;
+  }
+}
+
+loadAudit();
+setInterval(loadAudit, 5000);
+</script>
 </body>
 </html>
