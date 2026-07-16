@@ -1,85 +1,37 @@
-Checkpost
+# Checkpost
 
-A self-hosted reverse proxy for AI agent actions. Agents propose actions before executing them; Checkpost evaluates policy, enforces rate and spend limits, routes risky actions to a human approval queue, and writes every decision to a tamper-evident audit trail.
+A self-hosted firewall for AI agents. It sits between an agent and the real-world actions it wants to take, deleting a record, sending a payment, calling a paid API, and enforces policy before anything actually happens.
 
-Not a chat gateway. A gate for what an agent is about to do.
+## The problem
 
-Why this exists
+In April 2026, a coding agent running inside Cursor deleted a production database and every backup along with it, in nine seconds, despite having an explicit instruction not to. It wasn't hacked or tricked. It just decided to, and nothing stood between that decision and the database except a paragraph of text in a system prompt.
 
-In April 2026, a coding agent running inside Cursor on Claude Opus 4.6 was given access to a staging environment and, within nine seconds, deleted the entire production database for PocketOS along with every backup, despite an explicit system-prompt instruction never to run destructive commands without user request. The agent had not been compromised or manipulated. It simply decided, in its own reasoning, to do it anyway.
+That's the gap Checkpost closes. Model-level safety instructions live inside the agent's own reasoning, and reasoning can fail under pressure. Checkpost is a second, independent checkpoint outside that reasoning loop: a policy engine, a human approval queue, rate limits, spend caps, and a kill switch, so one bad decision can't reach a real system unchecked.
 
-Gartner found that fewer than 15% of enterprise AI agent deployments in 2025 included systematic exception routing for high-risk actions. Model-level alignment (system prompts, refusal training) lives inside the model's own reasoning and can fail under task pressure, as it did here. Checkpost is a governance layer that sits outside that reasoning loop, so a bad decision inside an agent can't reach a real system without an independent check.
+## How it works
 
-What it does
+1. An agent wants to do something. Instead of doing it directly, it sends the proposed action to Checkpost.
+2. A policy engine checks the action against a set of rules, tool pattern, cost threshold, rate limit, and decides: auto-approve, deny, or route for human approval.
+3. Low-risk, within-limits actions are approved instantly. Risky ones sit in a queue until a person reviews them from a dashboard.
+4. Every decision, every state change, is written to an append-only, hash-chained audit log, tamper-evident by design, not just by convention.
+5. If an approved action is already running and needs to be stopped, a kill switch can interrupt it mid-flight.
 
+## What's in it
 
-An agent wants to take an action (delete a record, send a payment, call a paid API).
-Instead of doing it directly, it submits the intended action to Checkpost.
-A policy engine evaluates the action against ordered rules (tool pattern, condition, action) and checks Redis-backed rate limits and daily spend caps.
-Low-risk, within-limits actions are auto-approved instantly.
-Higher-risk actions are queued for human approval in a dashboard.
-Every state transition is written to a hash-chained, tamper-evident audit log.
-Terminal decisions (approved/denied/killed) publish to Kafka and, if a callback URL was registered, trigger a webhook back to the agent.
-An in-flight or pending action can be interrupted at any time via a kill switch.
+- **Policy engine** — ordered rules matching on tool pattern, cost, and rate, not a hardcoded if-statement
+- **Rate limiting & spend caps** — Redis-backed, per-agent, enforced before execution
+- **Approval workflow** — a queue, a dashboard, and an audit trail of who decided what and why
+- **Tamper-evident audit log** — each entry is hash-chained to the one before it; altering old history breaks the chain and is provably detectable
+- **Kafka event streaming** — every state change publishes an event; a webhook fires to the agent's own callback URL the moment a decision is made
+- **Kill switch** — interrupt an approved or pending action before it does damage
+- **Integration tests** — Testcontainers spin up real Postgres, Kafka, and Redis for every test run, not mocks
 
+## Stack
 
-Architecture
+Java 21, Spring Boot, PostgreSQL, Redis, Kafka, React-style dashboard, Testcontainers, Docker Compose.
 
-Agent → POST /v1/actions → Policy Engine → Rate Limiter (Redis) → Spend Cap (Postgres)
-                                    ↓
-                    AUTO_APPROVED  or  PENDING_APPROVAL
-                                    ↓
-                    Human decision (dashboard) → APPROVED / DENIED
-                                    ↓
-                    Kafka (action-state-changes) → Webhook delivery
-                                    ↓
-                    Hash-chained AuditLog (every transition, tamper-evident)
+## What this isn't
 
-State machine
+This isn't a new idea. TrueFoundry, APort, Databricks Unity AI Gateway, and Microsoft's Agent Governance Toolkit all solve some version of this problem, at enterprise scale, for companies with security teams and six-figure budgets. Checkpost is a self-hosted, single-service version of the same pattern, built for a solo developer or small team who needs the same protection without the platform.
 
-SUBMITTED → POLICY_EVALUATING → (APPROVED | PENDING_APPROVAL → APPROVED/DENIED/TIMED_OUT) → EXECUTING → (SUCCEEDED | FAILED | KILLED)
-
-Core features
-
-
-Policy engine — ordered rules matching on tool pattern, an optional cost condition, and an action (allow / require approval / deny). First match wins.
-Rate limiting — Redis-backed, per-agent, per-minute counters.
-Spend caps — per-agent daily spend tracked in Postgres, enforced before an action is approved.
-Approval workflow — a queue dashboard for human sign-off on risky actions, with decision reasons recorded.
-Kill switch — interrupts an action from PENDING_APPROVAL, APPROVED, or EXECUTING.
-Idempotency keys — duplicate submissions of the same logical action return the original request instead of creating a new one.
-Hash-chained audit trail — every audit entry stores a SHA-256 hash of the entry before it. Tampering with any past row is detectable via /v1/audit/verify.
-Kafka event streaming — state changes publish to an action-state-changes topic; consumers (webhook delivery, and any future consumer) subscribe independently.
-Webhook callbacks — agents register a callback URL at submission time and are notified on terminal decisions instead of polling.
-Integration tests — real Postgres, Kafka, and Redis containers via Testcontainers, not mocks.
-
-
-Tech stack
-
-Java 21, Spring Boot 4.1, PostgreSQL, Redis, Apache Kafka, Spring Security, Spring Data JPA, Docker Compose, Testcontainers, a static HTML/JS dashboard.
-
-API surface
-
-EndpointPurposePOST /v1/actionsSubmit a proposed action (tool, payload, estimatedCost, optional idempotencyKey, optional callbackUrl)GET /v1/actions/{id}Poll an action's statusPOST /v1/actions/{id}/approveApprove a pending actionPOST /v1/actions/{id}/denyDeny a pending action, with a reasonPOST /v1/actions/{id}/killInterrupt an in-flight or pending actionPOST /v1/policiesCreate a policy ruleGET /v1/audit?actionRequestId=Query the audit trailGET /v1/audit/verifyVerify the integrity of the entire audit chainGET /v1/agents/{id}/spendCurrent spend against an agent's daily cap
-
-Running it locally
-
-bashdocker compose up -d          # Postgres + Redis + Kafka
-./mvnw spring-boot:run
-
-Dashboard: http://localhost:8080/
-Health check: curl localhost:8080/actuator/health
-
-Running the tests
-
-bash./mvnw clean test -Dtest=CheckpostIntegrationTest
-
-Spins up real Postgres, Kafka, and Redis containers via Testcontainers and tears them down automatically.
-
-Honest scope
-
-This is a solo learning and portfolio project, not a production system, and not a novel idea. It's inspired by production AI governance gateways — TrueFoundry's MCP Gateway, APort, Microsoft's Agent Governance Toolkit, Databricks Unity AI Gateway — scoped down to something a single developer can self-host without an enterprise platform.
-
-Explicitly out of scope: multi-tenant billing, SSO, compliance certification tooling, an LLM-based risk classifier (the policy engine is rule-based by design, easier to reason about and test), and a custom agent framework (the firewall is the project; any agent that calls it is just a demo of the integration).
-
-Spend tracking is recorded at submission time, not confirmed execution, since real tool execution isn't wired up. Exactly-once delivery guarantees are not implemented; idempotency keys cover the realistic retry case.
+## Running it locally
