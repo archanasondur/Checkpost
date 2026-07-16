@@ -42,6 +42,9 @@ public class ActionRequest {
     @Column(name = "decision_reason")
     private String decisionReason;
 
+    @Column(name = "callback_url")
+    private String callbackUrl;
+
     public ActionRequest() {}
 
     public Long getId() { return id; }
@@ -76,4 +79,7 @@ public class ActionRequest {
 
     public String getDecisionReason() { return decisionReason; }
     public void setDecisionReason(String decisionReason) { this.decisionReason = decisionReason; }
+
+    public String getCallbackUrl() { return callbackUrl; }
+    public void setCallbackUrl(String callbackUrl) { this.callbackUrl = callbackUrl; }
 }

@@ -6,6 +6,10 @@ public class ActionRequestDto {
     private String payload;
     private Double estimatedCost;
     private String idempotencyKey;
+    private String callbackUrl;
+
+    public String getCallbackUrl() { return callbackUrl; }
+    public void setCallbackUrl(String callbackUrl) { this.callbackUrl = callbackUrl; }
 
     public Long getAgentId() { return agentId; }
     public void setAgentId(Long agentId) { this.agentId = agentId; }

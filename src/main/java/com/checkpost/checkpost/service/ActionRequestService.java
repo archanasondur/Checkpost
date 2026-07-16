@@ -42,6 +42,7 @@ public class ActionRequestService {
         request.setToolName(dto.getToolName());
         request.setPayload(dto.getPayload());
         request.setIdempotencyKey(dto.getIdempotencyKey());
+        request.setCallbackUrl(dto.getCallbackUrl());
         request.setState(ActionState.POLICY_EVALUATING);
 
         com.checkpost.checkpost.dto.PolicyDecision decision =
